@@ -65,7 +65,7 @@ namespace LedgerWallet.Tests
 		[Trait("Manual", "Manual")]
 		public void CanSignTransactionStandardMode()
 		{
-			CanSignTransactionStandardModeCore(true);
+			//CanSignTransactionStandardModeCore(true);
 			CanSignTransactionStandardModeCore(false);
 		}
 
@@ -98,14 +98,12 @@ namespace LedgerWallet.Tests
 			var coins = funding.Outputs.AsCoins();
 
 			var spending = new Transaction();
-			spending.LockTime = 1;
+			//spending.LockTime = 1;
 			spending.Inputs.AddRange(coins.Select(o => new TxIn(o.Outpoint, Script.Empty)));
-			spending.Inputs[0].Sequence = 1;
-			//spending.Inputs.Add(new TxIn(new OutPoint(uint256.Zero, 0), Script.Empty));
-			spending.Outputs.Add(new TxOut(Money.Coins(0.5m), BitcoinAddress.Create("15sYbVpRh6dyWycZMwPdxJWD4xbfxReeHe", Network.Main)));
+			//spending.Inputs[0].Sequence = 1;
+			//spending.Inputs.Add(new TxIn(new OutPoint(uint256.Zero, 0), address));
+			spending.Outputs.Add(new TxOut(Money.Coins(0.5m), BitcoinAddress.Create("SUmtsKB2tysHeghC4mDPVWRNS3hMFbj9eE", network)));
 			spending.Outputs.Add(new TxOut(Money.Coins(0.8m), changeAddress));
-			spending.Outputs.Add(new TxOut(Money.Zero, TxNullDataTemplate.Instance.GenerateScriptPubKey(new byte[] { 1, 2 })));
-
 
 			var requests = new SignatureRequest[]{
 				new SignatureRequest()
@@ -135,12 +133,12 @@ namespace LedgerWallet.Tests
 			}
 
 			//should show 0.5 and 2.0 btc in fee
-			var signed = ledger.SignTransaction(requests, spending, new KeyPath("1'/1"));
+			var signed = ledger.SignTransaction(network,requests, spending, new KeyPath("1'/1"));
 			//Assert.Equal(Script.Empty, spending.Inputs.Last().ScriptSig);
 			Assert.NotNull(signed);
 		}
 
-		Network network = Network.Main;
+		Network network = Network.StratisMain;
 
 		[Fact]
 		[Trait("Manual", "Manual")]
@@ -171,7 +169,7 @@ namespace LedgerWallet.Tests
 			Parallel.For(0, 5, i =>
 			{
 				//should show 0.5 and 2.0 btc in fee
-				var signed = ledger.SignTransaction(
+				var signed = ledger.SignTransaction(network,
 				  new KeyPath("1'/0"),
 				  new Coin[]
 				{

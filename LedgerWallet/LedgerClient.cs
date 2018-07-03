@@ -180,7 +180,7 @@ namespace LedgerWallet
 			Continue = 0x80
 		}
 
-		public byte[][] UntrustedHashTransactionInputStart(
+		public byte[][] UntrustedHashTransactionInputStart(Network network,
 			InputStartType startType,
 			IndexedTxIn txIn,
 			Dictionary<OutPoint, TrustedInput> trustedInputs,
@@ -210,7 +210,7 @@ namespace LedgerWallet
 				}
 				byte[] script = new byte[0];
 				if(currentIndex == txIn.Index || segwitMode && !segwitParsedOnce)
-					script = coins[input.PrevOut].GetScriptCode().ToBytes();
+					script = coins[input.PrevOut].GetScriptCode(network).ToBytes();
 
 				data = new MemoryStream();
 				if(segwitMode)
@@ -277,11 +277,11 @@ namespace LedgerWallet
 			}
 			return apdus.ToArray();
 		}
-		public Transaction SignTransaction(KeyPath keyPath, ICoin[] signedCoins, Transaction[] parents, Transaction transaction, KeyPath changePath = null)
+		public Transaction SignTransaction(Network network, KeyPath keyPath, ICoin[] signedCoins, Transaction[] parents, Transaction transaction, KeyPath changePath = null)
 		{
-			return SignTransactionAsync(keyPath, signedCoins, parents, transaction, changePath).GetAwaiter().GetResult();
+			return SignTransactionAsync(network, keyPath, signedCoins, parents, transaction, changePath).GetAwaiter().GetResult();
 		}
-		public Task<Transaction> SignTransactionAsync(KeyPath keyPath, ICoin[] signedCoins, Transaction[] parents, Transaction transaction, KeyPath changePath = null)
+		public Task<Transaction> SignTransactionAsync(Network network, KeyPath keyPath, ICoin[] signedCoins, Transaction[] parents, Transaction transaction, KeyPath changePath = null)
 		{
 			List<SignatureRequest> requests = new List<SignatureRequest>();
 			foreach(var c in signedCoins)
@@ -295,17 +295,17 @@ namespace LedgerWallet
 						KeyPath = keyPath
 					});
 			}
-			return SignTransactionAsync(requests.ToArray(), transaction, changePath: changePath);
+			return SignTransactionAsync(network, requests.ToArray(), transaction, changePath: changePath);
 		}
-		public Transaction SignTransaction(SignatureRequest[] signatureRequests, Transaction transaction, KeyPath changePath = null)
+		public Transaction SignTransaction(Network network, SignatureRequest[] signatureRequests, Transaction transaction, KeyPath changePath = null)
 		{
-			return SignTransactionAsync(signatureRequests, transaction, changePath).GetAwaiter().GetResult();
+			return SignTransactionAsync(network, signatureRequests, transaction, changePath).GetAwaiter().GetResult();
 		}
-		public async Task<Transaction> SignTransactionAsync(SignatureRequest[] signatureRequests, Transaction transaction, KeyPath changePath = null)
+		public async Task<Transaction> SignTransactionAsync(Network network, SignatureRequest[] signatureRequests, Transaction transaction, KeyPath changePath = null)
 		{
 			if(signatureRequests.Length == 0)
 				throw new ArgumentException("No signatureRequests is passed", "signatureRequests");
-			var segwitCoins = signatureRequests.Where(s => s.InputCoin.GetHashVersion() == HashVersion.Witness).Count();
+			var segwitCoins = signatureRequests.Where(s => s.InputCoin.GetHashVersion(network) == HashVersion.Witness).Count();
 			if(segwitCoins != signatureRequests.Count() && segwitCoins != 0)
 				throw new ArgumentException("Mixing segwit input with non segwit input is not supported", "signatureRequests");
 
@@ -350,7 +350,7 @@ namespace LedgerWallet
 			{
 				var sigRequest = signatureRequests[i];
 				var input = inputsByOutpoint[sigRequest.InputCoin.Outpoint];
-				apdus.AddRange(UntrustedHashTransactionInputStart(inputStartType, input, trustedInputs, coinsByOutpoint, segwitMode, segwitParsedOnce));
+				apdus.AddRange(UntrustedHashTransactionInputStart(network,inputStartType, input, trustedInputs, coinsByOutpoint, segwitMode, segwitParsedOnce));
 				inputStartType = InputStartType.Continue;
 				if(!segwitMode || !segwitParsedOnce)
 					apdus.AddRange(UntrustedHashTransactionInputFinalizeFull(changePath, transaction.Outputs));
@@ -367,19 +367,20 @@ namespace LedgerWallet
 			foreach(var response in responses)
 				if(response.Response.Length > 10) //Probably a signature
 					response.Response[0] = 0x30;
-			var signatures = responses.Where(p => TransactionSignature.IsValid(p.Response)).Select(p => new TransactionSignature(p.Response)).ToArray();
+			var signatures = responses.Where(p => TransactionSignature.IsValid(network,p.Response)).Select(p => new TransactionSignature(p.Response)).ToArray();
 
 			if(signatureRequests.Length != signatures.Length)
 				throw new LedgerWalletException("failed to sign some inputs");
 			int sigIndex = 0;
 
-			TransactionBuilder builder = new TransactionBuilder();
+			TransactionBuilder builder = new TransactionBuilder(network);
 			foreach(var sigRequest in signatureRequests)
 			{
 				var input = inputsByOutpoint[sigRequest.InputCoin.Outpoint];
 				if(input == null)
 					continue;
-				builder.AddCoins(sigRequest.InputCoin);
+				builder.AddCoins(sigRequest.InputCoin)
+                    ;
 				builder.AddKnownSignature(sigRequest.PubKey, signatures[sigIndex]);
 				sigIndex++;
 			}
@@ -392,7 +393,7 @@ namespace LedgerWallet
 				if(input == null)
 					continue;
 				sigRequest.Signature = signatures[sigIndex];
-				if(!sigRequest.PubKey.Verify(transaction.GetSignatureHash(sigRequest.InputCoin, sigRequest.Signature.SigHash), sigRequest.Signature.Signature))
+				if(!sigRequest.PubKey.Verify(transaction.GetSignatureHash(network, sigRequest.InputCoin, sigRequest.Signature.SigHash), sigRequest.Signature.Signature))
 				{
 					foreach(var sigRequest2 in signatureRequests)
 						sigRequest2.Signature = null;
