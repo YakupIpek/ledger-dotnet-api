@@ -65,8 +65,8 @@ namespace LedgerWallet.Tests
 		[Trait("Manual", "Manual")]
 		public void CanSignTransactionStandardMode()
 		{
-			CanSignTransactionStandardModeCore(true);
-			CanSignTransactionStandardModeCore(false);
+			//CanSignTransactionStandardModeCore(true);
+			CanSignTransactionStandardModeCore();
 		}
 
 		[Fact]
@@ -81,19 +81,16 @@ namespace LedgerWallet.Tests
 			ledger.GetWalletPubKey(path, LedgerClient.AddressType.Segwit, false);
 		}
 
-		public void CanSignTransactionStandardModeCore(bool segwit)
+		public void CanSignTransactionStandardModeCore()
 		{
 			var ledger = GetLedger();
-			var walletPubKey = ledger.GetWalletPubKey(new KeyPath("1'/0"));
-			var address = segwit ? walletPubKey.UncompressedPublicKey.Compress().WitHash.ScriptPubKey : walletPubKey.GetAddress(network).ScriptPubKey;
+            var extPubKey = ledger.GetWalletPubKey(new KeyPath("44'/105'/0'")).ExtendedPublicKey;
 
-			var changeAddress = ledger.GetWalletPubKey(new KeyPath("1'/1")).GetAddress(network);
+            var address = extPubKey.Derive(new KeyPath("0/0")).ScriptPubKey;
 
 			Transaction funding = new Transaction();
 			funding.AddInput(Network.Main.GetGenesis().Transactions[0].Inputs[0]);
 			funding.Outputs.Add(new TxOut(Money.Coins(1.1m), address));
-			funding.Outputs.Add(new TxOut(Money.Coins(1.0m), address));
-			funding.Outputs.Add(new TxOut(Money.Coins(1.2m), address));
 
 			var coins = funding.Outputs.AsCoins();
 
@@ -101,42 +98,19 @@ namespace LedgerWallet.Tests
 			spending.LockTime = 1;
 			spending.Inputs.AddRange(coins.Select(o => new TxIn(o.Outpoint, Script.Empty)));
 			spending.Inputs[0].Sequence = 1;
-			//spending.Inputs.Add(new TxIn(new OutPoint(uint256.Zero, 0), Script.Empty));
-			spending.Outputs.Add(new TxOut(Money.Coins(0.5m), BitcoinAddress.Create("15sYbVpRh6dyWycZMwPdxJWD4xbfxReeHe", Network.Main)));
-			spending.Outputs.Add(new TxOut(Money.Coins(0.8m), changeAddress));
-			spending.Outputs.Add(new TxOut(Money.Zero, TxNullDataTemplate.Instance.GenerateScriptPubKey(new byte[] { 1, 2 })));
 
+            spending.Outputs.Add(new TxOut(Money.Coins(0.5m), address));
 
 			var requests = new SignatureRequest[]{
 				new SignatureRequest()
 				{
 					InputCoin = new Coin(funding, 0),
 					InputTransaction = funding,
-					KeyPath = new KeyPath("1'/0")
-				},
-				new SignatureRequest()
-				{
-					InputCoin = new Coin(funding, 1),
-					InputTransaction = funding,
-					KeyPath = new KeyPath("1'/0")
-				},
-				new SignatureRequest()
-				{
-					InputCoin = new Coin(funding, 2),
-					InputTransaction = funding,
-					KeyPath = new KeyPath("1'/0")
-				},
+					KeyPath = new KeyPath("44'/105'/0'/0/0")
+                }
 			};
 
-			if(segwit)
-			{
-				foreach(var req in requests)
-					req.InputTransaction = null;
-			}
-
-			//should show 0.5 and 2.0 btc in fee
-			var signed = ledger.SignTransaction(requests, spending, new KeyPath("1'/1"));
-			//Assert.Equal(Script.Empty, spending.Inputs.Last().ScriptSig);
+    		var signed = ledger.SignTransaction(requests, spending, null);
 			Assert.NotNull(signed);
 		}
 
